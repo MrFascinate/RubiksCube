@@ -1,0 +1,1296 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mr. Fascinate's Cube — 3D Twisty Puzzle in Space</title>
+<style>
+  :root{
+    --ink:#e8ecf2;
+    --ink-dim:#9aa3b2;
+    --panel:rgba(12,14,20,0.62);
+    --panel-stroke:rgba(255,255,255,0.08);
+    --accent:#ffd166;
+    --U:#ffffff; --D:#ffd23f; --F:#2ecc71; --B:#3a7bd5; --L:#ff8a3d; --R:#e7463b;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;width:100%;overflow:hidden;background:#000;color:var(--ink);
+    font-family:"Inter","Helvetica Neue",Helvetica,Arial,sans-serif;font-feature-settings:"ss01","cv11";
+    -webkit-font-smoothing:antialiased;
+  }
+  #stage{position:fixed;inset:0}
+  canvas{display:block;width:100%;height:100%;cursor:grab}
+  canvas.dragging{cursor:grabbing}
+
+  /* ————— HUD shell ————— */
+  .hud{position:fixed;z-index:5;color:var(--ink);pointer-events:none}
+  .hud .card{
+    pointer-events:auto;
+    background:var(--panel);
+    backdrop-filter:blur(18px) saturate(140%);
+    -webkit-backdrop-filter:blur(18px) saturate(140%);
+    border:1px solid var(--panel-stroke);
+    border-radius:14px;
+    padding:14px 16px;
+    box-shadow:0 10px 40px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.04);
+  }
+  .label{font-size:10.5px;letter-spacing:0.14em;text-transform:uppercase;color:var(--ink-dim);font-weight:600}
+  .mono{font-family:"JetBrains Mono","IBM Plex Mono",ui-monospace,Menlo,monospace}
+  h1.brand{font-weight:650;font-size:15px;letter-spacing:0.04em}
+  h1.brand em{font-style:normal;color:var(--accent)}
+
+  /* top-left: brand + move log */
+  #topLeft{top:18px;left:18px;width:280px;display:flex;flex-direction:column;gap:10px}
+  #brandRow{display:flex;align-items:center;gap:10px}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 10px var(--accent)}
+  #moveLog{min-height:38px;max-height:110px;overflow-y:auto;line-height:1.6;color:#c8ced9;font-size:13px;letter-spacing:0.06em}
+  #moveLog .m{display:inline-block;padding:1px 6px;margin:2px 3px 0 0;border-radius:4px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.06)}
+  #moveLog .m.prime{color:var(--accent)}
+  #moveLog::-webkit-scrollbar{width:4px}
+  #moveLog::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.12);border-radius:2px}
+
+  /* top-right: orientation tracker */
+  #topRight{top:18px;right:18px;width:260px}
+  #tracker{display:grid;grid-template-columns:56px 1fr;gap:10px 14px;align-items:center}
+  #tracker .slot{display:flex;align-items:center;gap:10px}
+  .chip{width:22px;height:22px;border-radius:6px;border:1px solid rgba(0,0,0,0.35);box-shadow:inset 0 -3px 0 rgba(0,0,0,0.15), 0 1px 0 rgba(255,255,255,0.06)}
+  .axisName{font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:var(--ink-dim)}
+  .colorName{font-size:13px;font-weight:600}
+  #trackerGrid{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;margin-top:10px}
+  #trackerGrid .row{display:flex;align-items:center;gap:8px;font-size:12px;color:#c8ced9}
+  #trackerGrid .row .chip{width:16px;height:16px;border-radius:4px}
+  .axisLegend{display:flex;justify-content:space-between;margin-top:12px;padding-top:10px;border-top:1px dashed rgba(255,255,255,0.08);font-size:11px;color:var(--ink-dim);letter-spacing:0.08em}
+
+  /* bottom-center: controls */
+  #bottom{bottom:20px;left:50%;transform:translateX(-50%);display:flex;gap:10px;align-items:center}
+  .btn{
+    pointer-events:auto;
+    border:1px solid var(--panel-stroke);
+    background:var(--panel);
+    color:var(--ink);
+    font:inherit;font-size:12.5px;letter-spacing:0.08em;text-transform:uppercase;font-weight:600;
+    padding:11px 16px;border-radius:999px;cursor:pointer;
+    backdrop-filter:blur(18px) saturate(140%);-webkit-backdrop-filter:blur(18px) saturate(140%);
+    transition:transform .12s ease, background .2s ease, border-color .2s ease;
+  }
+  .btn:hover{background:rgba(28,32,42,0.8);border-color:rgba(255,255,255,0.16)}
+  .btn:active{transform:translateY(1px)}
+  .btn.primary{background:linear-gradient(180deg, rgba(255,209,102,0.95), rgba(235,180,70,0.95));color:#1a1308;border-color:rgba(255,209,102,0.5)}
+  .btn.primary:hover{background:linear-gradient(180deg,#ffd76b,#f0bd5a)}
+  .btn.ghost{background:transparent}
+  .btn.active{background:linear-gradient(180deg, rgba(255,209,102,0.2), rgba(235,180,70,0.15));border-color:rgba(255,209,102,0.4);color:var(--accent)}
+  .kbd{display:inline-block;padding:1px 6px;border-radius:4px;border:1px solid rgba(255,255,255,0.14);background:rgba(255,255,255,0.05);font-family:"JetBrains Mono",monospace;font-size:10.5px;color:#c8ced9}
+
+  /* bottom-left: timer */
+  #timerCard{position:fixed;left:18px;bottom:20px;z-index:5}
+  #timerCard .val{font-family:"JetBrains Mono",monospace;font-size:26px;font-weight:600;letter-spacing:0.04em;color:var(--ink)}
+  #timerCard .val.running{color:var(--accent)}
+  #timerCard .sub{display:flex;gap:10px;margin-top:6px;color:var(--ink-dim);font-size:11px;letter-spacing:0.08em;text-transform:uppercase}
+
+  /* bottom-right: solved indicator + move count */
+  #bottomRight{position:fixed;right:18px;bottom:20px;z-index:5;text-align:right}
+  #statusBadge{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;background:var(--panel);border:1px solid var(--panel-stroke);font-size:12px;letter-spacing:0.08em;text-transform:uppercase;font-weight:600;backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}
+  #statusBadge .pulse{width:7px;height:7px;border-radius:50%;background:#8a94a5;box-shadow:0 0 6px rgba(138,148,165,0.6)}
+  #statusBadge.solved{color:#07110a}
+  #statusBadge.solved{background:linear-gradient(180deg,#8affc6,#4bd99a);border-color:rgba(255,255,255,0.35)}
+  #statusBadge.solved .pulse{background:#0c3a25;box-shadow:0 0 10px rgba(40,200,120,0.9);animation:pulse 1.2s ease-in-out infinite}
+  @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.6)}}
+
+  /* crosshair hints when hovering a face */
+  #hint{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);pointer-events:none;font-size:11px;letter-spacing:0.1em;color:var(--ink-dim);text-transform:uppercase;opacity:0;transition:opacity .3s}
+
+  /* intro splash */
+  #intro{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 50% 50%, rgba(0,0,0,0.2), #000 70%);transition:opacity .6s}
+  #intro.gone{opacity:0;pointer-events:none}
+  #intro .panel{text-align:center;padding:32px 44px}
+  #intro h2{font-size:26px;font-weight:650;letter-spacing:0.02em;margin-bottom:8px}
+  #intro h2 em{font-style:normal;color:var(--accent)}
+  #intro p{color:var(--ink-dim);font-size:13px;max-width:440px;margin:0 auto 22px;line-height:1.55}
+  #intro .btn{padding:13px 28px}
+
+  @media (max-width: 780px){
+    #topLeft,#topRight{width:calc(50% - 24px)}
+    #tracker{grid-template-columns:44px 1fr}
+    #bottom{gap:6px}
+    .btn{padding:9px 12px;font-size:11.5px}
+    #timerCard{bottom:72px}
+    #bottomRight{bottom:72px}
+  }
+</style>
+</head>
+<body>
+
+<div id="stage"></div>
+
+<!-- Top-left: brand + move log -->
+<div class="hud" id="topLeft">
+  <div class="card">
+    <div id="brandRow">
+      <span class="dot"></span>
+      <h1 class="brand">MR.<em>FASCINATE</em>'S CUBE</h1>
+    </div>
+    <div style="margin-top:10px" class="label">Move History</div>
+    <div id="moveLog" class="mono"></div>
+  </div>
+</div>
+
+<!-- Top-right: orientation tracker -->
+<div class="hud" id="topRight">
+  <div class="card">
+    <div class="label" style="margin-bottom:10px">Orientation Tracker</div>
+    <div id="tracker">
+      <div class="axisName">Up</div>     <div class="slot"><span class="chip" id="chipU"></span><span class="colorName" id="nameU">—</span></div>
+      <div class="axisName">Front</div>  <div class="slot"><span class="chip" id="chipF"></span><span class="colorName" id="nameF">—</span></div>
+      <div class="axisName">Right</div>  <div class="slot"><span class="chip" id="chipR"></span><span class="colorName" id="nameR">—</span></div>
+    </div>
+    <div id="trackerGrid">
+      <div class="row"><span class="chip" id="chipD"></span><span>Down · <em id="nameD" style="font-style:normal;color:#fff"></em></span></div>
+      <div class="row"><span class="chip" id="chipB"></span><span>Back · <em id="nameB" style="font-style:normal;color:#fff"></em></span></div>
+      <div class="row"><span class="chip" id="chipL"></span><span>Left · <em id="nameL" style="font-style:normal;color:#fff"></em></span></div>
+    </div>
+    <div class="axisLegend"><span>Drag cube · twist</span><span>Drag space · orbit</span></div>
+  </div>
+</div>
+
+<!-- Bottom-center: controls -->
+<div class="hud" id="bottom">
+  <button class="btn primary" id="scrambleBtn">Scramble</button>
+  <button class="btn" id="resetBtn">Reset</button>
+  <button class="btn ghost" id="undoBtn" title="Undo last move"><span class="kbd">↶</span> Undo</button>
+  <button class="btn ghost" id="viewBtn" title="Reset camera">Recenter</button>
+  <button class="btn ghost" id="spinBtn" title="Toggle auto-rotate">⟳ Spin: Off</button>
+</div>
+
+<!-- Bottom-left: timer -->
+<div class="hud" id="timerCard">
+  <div class="card">
+    <div class="label">Timer</div>
+    <div class="val" id="timerVal">0.00</div>
+    <div class="sub"><span id="timerBest">best —</span><span id="timerMoves">0 moves</span></div>
+  </div>
+</div>
+
+<!-- Bottom-right: status -->
+<div class="hud" id="bottomRight">
+  <div id="statusBadge"><span class="pulse"></span><span id="statusText">Solved</span></div>
+</div>
+
+<!-- Intro splash -->
+<div id="intro">
+  <div class="panel">
+    <h2>Mr. <em>Fascinate's</em> Cube</h2>
+    <p>A photorealistic 3×3 twisty puzzle, afloat in deep space. Drag a face to twist. Drag empty space to orbit the camera. The tracker shows which color is currently facing each direction.</p>
+    <button class="btn primary" id="introGo">Enter the void</button>
+  </div>
+</div>
+
+<!-- Three.js -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+// ——————————————————————————————————————
+//  Scene, camera, renderer
+// ——————————————————————————————————————
+const stage = document.getElementById('stage');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x000004);
+
+const camera = new THREE.PerspectiveCamera(38, window.innerWidth/window.innerHeight, 0.1, 2000);
+camera.position.set(6.2, 5.6, 8.4);
+
+const renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.35;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+stage.appendChild(renderer.domElement);
+
+// Postprocessing — subtle bloom for space glow
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.55, 0.8, 0.85);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+// ——————————————————————————————————————
+//  Lights
+// ——————————————————————————————————————
+// Brighter ambient so every cubie reads, even on the shadow side
+scene.add(new THREE.AmbientLight(0xb8c4d8, 1.15));
+
+// Warm key light from the "sun"
+const key = new THREE.DirectionalLight(0xfff1d6, 2.6);
+key.position.set(6, 9, 7);
+key.castShadow = true;
+key.shadow.mapSize.set(1024,1024);
+key.shadow.camera.near = 1; key.shadow.camera.far = 40;
+key.shadow.camera.left=-6;key.shadow.camera.right=6;key.shadow.camera.top=6;key.shadow.camera.bottom=-6;
+key.shadow.bias = -0.0005;
+scene.add(key);
+
+// Cool rim from behind/left
+const rim = new THREE.DirectionalLight(0x9ec0ff, 1.8);
+rim.position.set(-7, 3, -5);
+scene.add(rim);
+
+// Under-fill so the bottom face isn't pitch black
+const underFill = new THREE.DirectionalLight(0xb0d4ff, 1.2);
+underFill.position.set(0, -8, 2);
+scene.add(underFill);
+
+// Warm accent from below-front
+const accent = new THREE.PointLight(0xff9a5c, 1.8, 40, 1.6);
+accent.position.set(3, -4, 6);
+scene.add(accent);
+
+// Cool accent from below-back
+const coolAccent = new THREE.PointLight(0x6ea8ff, 1.4, 40, 1.6);
+coolAccent.position.set(-4, -3, -4);
+scene.add(coolAccent);
+
+// Hemisphere light for sky/ground gradient — very cheap and warms up dark areas
+const hemi = new THREE.HemisphereLight(0xcfd9ff, 0x1a1a22, 0.6);
+scene.add(hemi);
+
+// ——————————————————————————————————————
+//  Starfield + nebula
+// ——————————————————————————————————————
+function makeStarfield(count, radius, size, color){
+  const g = new THREE.BufferGeometry();
+  const pos = new Float32Array(count*3);
+  const col = new Float32Array(count*3);
+  const c = new THREE.Color();
+  for(let i=0;i<count;i++){
+    // distribute on sphere shell, slight radial jitter
+    const u = Math.random(), v = Math.random();
+    const theta = 2*Math.PI*u, phi = Math.acos(2*v-1);
+    const r = radius * (0.85 + Math.random()*0.3);
+    pos[i*3]   = r*Math.sin(phi)*Math.cos(theta);
+    pos[i*3+1] = r*Math.sin(phi)*Math.sin(theta);
+    pos[i*3+2] = r*Math.cos(phi);
+    c.set(color).offsetHSL((Math.random()-0.5)*0.08, 0, (Math.random()-0.5)*0.25);
+    col[i*3]=c.r;col[i*3+1]=c.g;col[i*3+2]=c.b;
+  }
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  const m = new THREE.PointsMaterial({ size, vertexColors:true, sizeAttenuation:true, transparent:true, opacity:0.9, depthWrite:false });
+  return new THREE.Points(g, m);
+}
+scene.add(makeStarfield(2600, 300, 0.6, 0xffffff));
+scene.add(makeStarfield(800, 180, 1.2, 0xffdcb0));
+scene.add(makeStarfield(400, 220, 2.0, 0x9dc6ff));
+
+// Distant nebula glow (billboarded radial-gradient sprites)
+function radialSprite(colorInner, colorOuter, size){
+  const cvs = document.createElement('canvas'); cvs.width=cvs.height=256;
+  const ctx = cvs.getContext('2d');
+  const grd = ctx.createRadialGradient(128,128,4,128,128,128);
+  grd.addColorStop(0, colorInner);
+  grd.addColorStop(0.4, colorOuter);
+  grd.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = grd; ctx.fillRect(0,0,256,256);
+  const tex = new THREE.CanvasTexture(cvs);
+  const mat = new THREE.SpriteMaterial({ map:tex, blending:THREE.AdditiveBlending, depthWrite:false, transparent:true, opacity:0.75 });
+  const s = new THREE.Sprite(mat); s.scale.set(size,size,1); return s;
+}
+
+// ——————————————————————————————————————
+//  Procedural planets
+// ——————————————————————————————————————
+// Simple pseudo-noise for procedural textures (value noise + fbm)
+function hash2(x, y){
+  const s = Math.sin(x*127.1 + y*311.7) * 43758.5453;
+  return s - Math.floor(s);
+}
+function smooth(t){ return t*t*(3-2*t); }
+function noise2(x, y){
+  const xi = Math.floor(x), yi = Math.floor(y);
+  const xf = x - xi, yf = y - yi;
+  const a = hash2(xi, yi), b = hash2(xi+1, yi);
+  const c = hash2(xi, yi+1), d = hash2(xi+1, yi+1);
+  const u = smooth(xf), v = smooth(yf);
+  return (a*(1-u) + b*u)*(1-v) + (c*(1-u) + d*u)*v;
+}
+function fbm(x, y, oct=5){
+  let amp=1, f=1, sum=0, max=0;
+  for (let i=0;i<oct;i++){ sum += amp*noise2(x*f, y*f); max += amp; amp*=0.5; f*=2; }
+  return sum/max;
+}
+
+// Build a lat-long planet texture with customizable palette function
+function planetTexture(size, paletteFn, opts={}){
+  const cvs = document.createElement('canvas'); cvs.width = size*2; cvs.height = size;
+  const ctx = cvs.getContext('2d');
+  const img = ctx.createImageData(size*2, size);
+  const data = img.data;
+  const scale = opts.scale || 3.0;
+  const warp = opts.warp || 0;
+  for (let y=0; y<size; y++){
+    // seam-friendly: use spherical-ish distortion
+    const v = y / size;
+    const lat = (v - 0.5) * Math.PI;
+    const latCompress = Math.cos(lat); // shrink near poles
+    for (let x=0; x<size*2; x++){
+      const u = x / (size*2);
+      // sample noise in a way that wraps horizontally — use cos/sin of longitude
+      const lon = u * Math.PI * 2;
+      const nx = Math.cos(lon) * scale * latCompress;
+      const ny = Math.sin(lon) * scale * latCompress;
+      const nz = v * scale;
+      let n = fbm(nx + ny*0.4, nz + nx*0.3, 5);
+      if (warp){
+        const wx = fbm(nx*2+5, nz*2+5, 3);
+        const wy = fbm(nx*2-3, nz*2-3, 3);
+        n = fbm(nx + wx*warp, nz + wy*warp, 5);
+      }
+      const [r,g,b] = paletteFn(n, v, u);
+      const i = (y*size*2 + x)*4;
+      data[i] = r; data[i+1] = g; data[i+2] = b; data[i+3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(cvs);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  tex.wrapS = THREE.RepeatWrapping;
+  return tex;
+}
+
+function lerp(a,b,t){ return a + (b-a)*t; }
+function mixRGB(c1, c2, t){ return [lerp(c1[0],c2[0],t), lerp(c1[1],c2[1],t), lerp(c1[2],c2[2],t)]; }
+
+// Earth-like palette: deep ocean → shallow → sand → grass → forest → snow
+function earthPalette(n, v){
+  const polar = Math.pow(Math.abs(v-0.5)*2, 3) * 0.5;
+  const h = n + polar*0.15;
+  if (h < 0.48) return mixRGB([6,18,48],[18,60,110], h/0.48);
+  if (h < 0.52) return mixRGB([18,60,110],[60,110,140], (h-0.48)/0.04);
+  if (h < 0.55) return mixRGB([200,180,130],[120,150,70], (h-0.52)/0.03);
+  if (h < 0.68) return mixRGB([80,120,50],[30,70,25], (h-0.55)/0.13);
+  if (h < 0.78) return mixRGB([90,80,60],[140,120,90], (h-0.68)/0.10);
+  return mixRGB([200,200,195],[255,255,255], Math.min(1,(h-0.78)/0.2));
+}
+// Mars/rust palette
+function marsPalette(n, v){
+  const polar = Math.pow(Math.abs(v-0.5)*2, 4);
+  if (polar > 0.82) return mixRGB([220,210,200],[255,250,245], (polar-0.82)/0.18);
+  if (n < 0.45) return mixRGB([90,30,15],[140,60,30], n/0.45);
+  if (n < 0.7)  return mixRGB([160,80,40],[200,120,70], (n-0.45)/0.25);
+  return mixRGB([210,140,90],[240,190,140], (n-0.7)/0.3);
+}
+// Gas-giant banded palette (Jupiter-like)
+function gasGiantPalette(n, v){
+  const bands = Math.sin(v*Math.PI*8 + n*3) * 0.5 + 0.5;
+  const mix = bands*0.6 + n*0.4;
+  if (mix < 0.35) return mixRGB([110,70,40],[160,110,70], mix/0.35);
+  if (mix < 0.6)  return mixRGB([200,160,110],[230,200,160], (mix-0.35)/0.25);
+  return mixRGB([240,220,190],[255,245,220], (mix-0.6)/0.4);
+}
+// Ice giant palette (Neptune-ish)
+function iceGiantPalette(n){
+  if (n < 0.45) return mixRGB([20,40,100],[40,80,160], n/0.45);
+  if (n < 0.7)  return mixRGB([50,100,180],[100,150,220], (n-0.45)/0.25);
+  return mixRGB([150,190,230],[200,220,240], (n-0.7)/0.3);
+}
+
+// Build a planet mesh with atmosphere glow sprite
+function makePlanet({ radius, paletteFn, position, tilt=0, emissive=0x000000, hasRing=false, ringColor=[200,180,140], atmColor='#8ab4ff', atmStrength=0.6, noiseOpts={} }){
+  const group = new THREE.Group();
+  const tex = planetTexture(384, paletteFn, noiseOpts);
+  const geo = new THREE.SphereGeometry(radius, 64, 48);
+  const mat = new THREE.MeshStandardMaterial({
+    map: tex,
+    roughness: 0.85,
+    metalness: 0.0,
+    emissive: new THREE.Color(emissive),
+    emissiveIntensity: 0.08,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.rotation.z = tilt;
+  group.add(mesh);
+
+  // Atmosphere glow — back-facing shader-free shell with additive blending
+  const atmGeo = new THREE.SphereGeometry(radius*1.08, 48, 32);
+  const atmMat = new THREE.ShaderMaterial({
+    uniforms:{ glowColor:{ value: new THREE.Color(atmColor) }, power:{ value: 2.4 }, strength:{ value: atmStrength } },
+    vertexShader:`
+      varying vec3 vNormal;
+      varying vec3 vView;
+      void main(){
+        vNormal = normalize(normalMatrix * normal);
+        vec4 mv = modelViewMatrix * vec4(position,1.0);
+        vView = normalize(-mv.xyz);
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader:`
+      uniform vec3 glowColor;
+      uniform float power;
+      uniform float strength;
+      varying vec3 vNormal;
+      varying vec3 vView;
+      void main(){
+        float f = pow(1.0 - abs(dot(vNormal, vView)), power);
+        gl_FragColor = vec4(glowColor, f * strength);
+      }`,
+    side: THREE.BackSide,
+    blending: THREE.AdditiveBlending,
+    transparent: true,
+    depthWrite: false,
+  });
+  const atm = new THREE.Mesh(atmGeo, atmMat);
+  group.add(atm);
+
+  if (hasRing){
+    const inner = radius*1.35, outer = radius*2.15;
+    const rGeo = new THREE.RingGeometry(inner, outer, 128, 8);
+    // build a ring color texture
+    const rc = document.createElement('canvas'); rc.width=512; rc.height=1;
+    const rctx = rc.getContext('2d');
+    for (let i=0;i<512;i++){
+      const t = i/512;
+      const band = (Math.sin(t*40)+1)/2 * 0.3 + Math.random()*0.08;
+      const a = (Math.abs(t-0.5) < 0.45 ? 1 : 0.3) * (0.4 + band);
+      const rr = ringColor[0]*(0.7+band*0.6), gg = ringColor[1]*(0.7+band*0.6), bb = ringColor[2]*(0.7+band*0.6);
+      rctx.fillStyle = `rgba(${rr|0},${gg|0},${bb|0},${a})`;
+      rctx.fillRect(i,0,1,1);
+    }
+    const rtex = new THREE.CanvasTexture(rc);
+    rtex.colorSpace = THREE.SRGBColorSpace;
+    // rotate UVs so radial direction samples the gradient
+    const uv = rGeo.attributes.uv;
+    const pos = rGeo.attributes.position;
+    for (let i=0;i<uv.count;i++){
+      const x = pos.getX(i), y = pos.getY(i);
+      const r = Math.sqrt(x*x + y*y);
+      uv.setXY(i, (r - inner)/(outer - inner), 0.5);
+    }
+    const rMat = new THREE.MeshBasicMaterial({ map:rtex, transparent:true, side:THREE.DoubleSide, depthWrite:false, opacity:0.9 });
+    const ring = new THREE.Mesh(rGeo, rMat);
+    ring.rotation.x = Math.PI/2 - 0.35;
+    ring.rotation.y = 0.15;
+    group.add(ring);
+  }
+
+  group.position.set(position[0], position[1], position[2]);
+  group.userData.spinSpeed = 0.0005 + Math.random()*0.0008;
+  scene.add(group);
+  return group;
+}
+
+// ——————————————————————————————————————
+//  Environment map — so the cube gets real reflections
+// ——————————————————————————————————————
+// Use a CubeCamera to bake the space scene into an env map the cube can reflect
+const cubeRT = new THREE.WebGLCubeRenderTarget(512, { generateMipmaps:true, minFilter: THREE.LinearMipmapLinearFilter });
+const cubeCam = new THREE.CubeCamera(0.1, 1000, cubeRT);
+cubeCam.position.set(0,0,0);
+scene.add(cubeCam);
+// render once after everything is built (we'll call it after cube construction too to refresh)
+function bakeEnv(){
+  cubeGroup.visible = false;
+  cubeCam.update(renderer, scene);
+  cubeGroup.visible = true;
+  scene.environment = cubeRT.texture;
+}
+
+// ——————————————————————————————————————
+//  Cube construction
+// ——————————————————————————————————————
+const COLORS = {
+  U: new THREE.Color('#f5f5f5'), // white
+  D: new THREE.Color('#ffd23f'), // yellow
+  F: new THREE.Color('#2ecc71'), // green
+  B: new THREE.Color('#3a7bd5'), // blue
+  L: new THREE.Color('#ff8a3d'), // orange
+  R: new THREE.Color('#e7463b'), // red
+};
+const COLOR_NAMES = { U:'White', D:'Yellow', F:'Green', B:'Blue', L:'Orange', R:'Red' };
+
+// "Interior" plastic
+const plasticMat = new THREE.MeshPhysicalMaterial({
+  color: 0x1a1a22,
+  roughness: 0.5,
+  metalness: 0.0,
+  clearcoat: 0.3,
+  clearcoatRoughness: 0.55,
+});
+
+function makeStickerMaterial(hex){
+  return new THREE.MeshPhysicalMaterial({
+    color: hex,
+    roughness: 0.24,
+    metalness: 0.0,
+    clearcoat: 1.0,
+    clearcoatRoughness: 0.06,
+    reflectivity: 0.4,
+    sheen: 0.35,
+    sheenRoughness: 0.55,
+    sheenColor: new THREE.Color(0xffffff),
+    emissive: new THREE.Color(hex),
+    emissiveIntensity: 0.22,
+    envMapIntensity: 1.1,
+  });
+}
+const stickerMats = {
+  U: makeStickerMaterial(COLORS.U), D: makeStickerMaterial(COLORS.D),
+  F: makeStickerMaterial(COLORS.F), B: makeStickerMaterial(COLORS.B),
+  L: makeStickerMaterial(COLORS.L), R: makeStickerMaterial(COLORS.R),
+};
+
+const cubeGroup = new THREE.Group();
+scene.add(cubeGroup);
+
+const CUBIE_SIZE = 0.98;
+const CUBIE_GAP  = 1.02;
+const STICKER_INSET = 0.028;
+const STICKER_SIZE  = 0.82;
+
+const cubies = []; // each: { mesh, initialIndex, stickers:[], }
+
+// build 27 cubies
+for (let x=-1; x<=1; x++){
+  for (let y=-1; y<=1; y++){
+    for (let z=-1; z<=1; z++){
+      const cubieGroup = new THREE.Group();
+      cubieGroup.position.set(x*CUBIE_GAP, y*CUBIE_GAP, z*CUBIE_GAP);
+
+      const geo = new RoundedBoxGeometry(CUBIE_SIZE, CUBIE_SIZE, CUBIE_SIZE, 4, 0.08);
+      const body = new THREE.Mesh(geo, plasticMat);
+      body.castShadow = true; body.receiveShadow = true;
+      cubieGroup.add(body);
+
+      // add stickers on exposed faces
+      const stickerGeo = new THREE.PlaneGeometry(STICKER_SIZE, STICKER_SIZE);
+      const stickerList = [];
+      function addSticker(face, rot, pos){
+        const m = new THREE.Mesh(stickerGeo, stickerMats[face]);
+        m.position.copy(pos);
+        m.rotation.copy(rot);
+        m.userData.face = face;
+        cubieGroup.add(m);
+        stickerList.push(m);
+      }
+      const half = CUBIE_SIZE/2 + STICKER_INSET;
+      if (x===1)  addSticker('R', new THREE.Euler(0, Math.PI/2, 0),  new THREE.Vector3(half, 0, 0));
+      if (x===-1) addSticker('L', new THREE.Euler(0,-Math.PI/2, 0),  new THREE.Vector3(-half, 0, 0));
+      if (y===1)  addSticker('U', new THREE.Euler(-Math.PI/2, 0, 0), new THREE.Vector3(0, half, 0));
+      if (y===-1) addSticker('D', new THREE.Euler(Math.PI/2, 0, 0),  new THREE.Vector3(0,-half, 0));
+      if (z===1)  addSticker('F', new THREE.Euler(0, 0, 0),          new THREE.Vector3(0, 0, half));
+      if (z===-1) addSticker('B', new THREE.Euler(0, Math.PI, 0),    new THREE.Vector3(0, 0,-half));
+
+      cubieGroup.userData = { stickers: stickerList };
+      cubeGroup.add(cubieGroup);
+      cubies.push(cubieGroup);
+    }
+  }
+}
+
+// soft shadow catcher (subtle, to feel grounded in space)
+const shadowMat = new THREE.ShadowMaterial({ opacity:0.35 });
+const shadowPlane = new THREE.Mesh(new THREE.PlaneGeometry(20,20), shadowMat);
+shadowPlane.rotation.x = -Math.PI/2;
+shadowPlane.position.y = -2.6;
+shadowPlane.receiveShadow = true;
+scene.add(shadowPlane);
+
+// ——————————————————————————————————————
+//  Orbit controls
+// ——————————————————————————————————————
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.rotateSpeed = 0.85;
+controls.enablePan = false;
+controls.minDistance = 5;
+controls.maxDistance = 18;
+controls.target.set(0,0,0);
+
+// ——————————————————————————————————————
+//  Face-twist interaction
+// ——————————————————————————————————————
+// Approach: user clicks a sticker; we record face normal & hit point.
+// As they drag, we pick the dominant tangent direction → determines which slice rotates and direction.
+
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+const FACE_AXIS = {  // which world axis each face's normal lies on, in cube-local
+  U:'y', D:'y', R:'x', L:'x', F:'z', B:'z'
+};
+
+let drag = null; // {faceNormal, hitPoint, startNDC, cubie}
+let isTwisting = false; // animation in progress
+let orbitingBlocked = false;
+let highlightedCubies = new Set(); // live preview of slice that would rotate
+
+function setHighlight(cubiesSet){
+  // clear old
+  highlightedCubies.forEach(c=>{
+    c.userData.stickers.forEach(s=>{
+      s.material.emissiveIntensity = 0.22;
+    });
+  });
+  highlightedCubies = cubiesSet || new Set();
+  highlightedCubies.forEach(c=>{
+    c.userData.stickers.forEach(s=>{
+      s.material.emissiveIntensity = 0.38;
+    });
+  });
+}
+function clearHighlight(){ setHighlight(null); }
+
+function previewSliceFromDrag(dx, dy){
+  if (!drag) return null;
+  const camRight = new THREE.Vector3();
+  const camUp = new THREE.Vector3();
+  camera.matrixWorld.extractBasis(camRight, camUp, new THREE.Vector3());
+  const faceN = drag.faceNormal.clone();
+  const dragWorld = camRight.clone().multiplyScalar(dx).add(camUp.clone().multiplyScalar(-dy));
+  if (dragWorld.lengthSq() < 1e-4) return null;
+  dragWorld.normalize();
+  const inPlane = dragWorld.sub(faceN.clone().multiplyScalar(dragWorld.dot(faceN)));
+  if (inPlane.lengthSq() < 1e-4) return null;
+  inPlane.normalize();
+  const rotAxis = new THREE.Vector3().crossVectors(faceN, inPlane).normalize();
+  const axisSnapped = snapAxis(rotAxis);
+  if (!axisSnapped) return null;
+  const clickedCubie = drag.hitObject.parent;
+  const cubieWorld = new THREE.Vector3();
+  clickedCubie.getWorldPosition(cubieWorld);
+  cubeGroup.worldToLocal(cubieWorld);
+  const axisName = axisSnapped.axis;
+  const sliceVal = Math.round(cubieWorld[axisName] / CUBIE_GAP);
+  const signProj = rotAxis.dot(axisSnapped.vec);
+  const direction = signProj >= 0 ? 1 : -1;
+  return { axisName, sliceVal, direction };
+}
+
+const el = renderer.domElement;
+
+function updatePointer(ev){
+  const r = el.getBoundingClientRect();
+  pointer.x = ((ev.clientX - r.left) / r.width) * 2 - 1;
+  pointer.y = -((ev.clientY - r.top) / r.height) * 2 + 1;
+}
+
+function pickSticker(){
+  raycaster.setFromCamera(pointer, camera);
+  // gather all stickers
+  const stickers = [];
+  cubies.forEach(c => c.userData.stickers.forEach(s => stickers.push(s)));
+  const hits = raycaster.intersectObjects(stickers, false);
+  return hits[0] || null;
+}
+
+el.addEventListener('pointerdown', (ev)=>{
+  if (isTwisting) return;
+  updatePointer(ev);
+  const hit = pickSticker();
+  if (!hit) { drag = null; return; }
+  // world-space normal of the face we clicked
+  const n = new THREE.Vector3(0,0,1).applyEuler(hit.object.rotation);
+  // transform through cubeGroup rotation
+  n.applyQuaternion(cubeGroup.quaternion).normalize();
+  drag = {
+    faceNormal: n,
+    hitObject: hit.object,
+    hitPoint: hit.point.clone(),
+    startX: ev.clientX,
+    startY: ev.clientY,
+    committed: false,
+  };
+  controls.enabled = false;
+  el.classList.add('dragging');
+});
+
+el.addEventListener('pointermove', (ev)=>{
+  if (isTwisting) return;
+  if (!drag || drag.committed){
+    // no hover highlight — we can't know which slice until the user drags
+    clearHighlight();
+    return;
+  }
+  // during drag: preview the 3-cubie slice that will rotate
+  const dx = ev.clientX - drag.startX;
+  const dy = ev.clientY - drag.startY;
+  if (Math.hypot(dx, dy) < 6){
+    // still in deadzone — no highlight yet
+    clearHighlight();
+    return;
+  }
+  const preview = previewSliceFromDrag(dx, dy);
+  if (preview){
+    setHighlight(new Set(collectSlice(preview.axisName, preview.sliceVal)));
+  }
+  if (Math.hypot(dx, dy) < 14) return; // commit threshold
+  commitTwistFromDrag(dx, dy);
+});
+
+el.addEventListener('pointerleave', ()=> { if (!drag) clearHighlight(); });
+
+window.addEventListener('pointerup', ()=>{
+  if (drag && !drag.committed){ controls.enabled = true; clearHighlight(); }
+  drag = null;
+  el.classList.remove('dragging');
+});
+
+// Given pointer delta in screen-space, pick the world axis to rotate around and direction.
+function commitTwistFromDrag(dx, dy){
+  // Convert drag direction to a world-space vector along the clicked face.
+  // Project camera right/up into the face plane.
+  const camRight = new THREE.Vector3();
+  const camUp = new THREE.Vector3();
+  camera.matrixWorld.extractBasis(camRight, camUp, new THREE.Vector3());
+  const faceN = drag.faceNormal.clone();
+
+  // drag direction in world:
+  const dragWorld = camRight.multiplyScalar(dx).add(camUp.multiplyScalar(-dy)).normalize();
+  // project onto face plane
+  const inPlane = dragWorld.sub(faceN.clone().multiplyScalar(dragWorld.dot(faceN))).normalize();
+
+  // The rotation axis is perpendicular to both the face normal and drag direction,
+  // i.e. the axis of rotation lies IN the face (tangent) perpendicular to drag dir.
+  const rotAxis = new THREE.Vector3().crossVectors(faceN, inPlane).normalize();
+  // snap to nearest world axis (X/Y/Z)
+  const axisSnapped = snapAxis(rotAxis);
+  if (!axisSnapped) return;
+
+  // The slice to rotate contains the clicked cubie along that axis.
+  const clickedCubie = drag.hitObject.parent;
+  // Use clicked cubie's current world position projected onto the rotation axis
+  const cubieWorld = new THREE.Vector3();
+  clickedCubie.getWorldPosition(cubieWorld);
+  cubeGroup.worldToLocal(cubieWorld);
+
+  const axisName = axisSnapped.axis;
+  const sliceVal = Math.round(cubieWorld[axisName] / CUBIE_GAP); // -1, 0, 1
+
+  // Direction: sign from the un-snapped axis vs snapped axis
+  const signProj = rotAxis.dot(axisSnapped.vec);
+  const direction = signProj >= 0 ? 1 : -1;
+
+  drag.committed = true;
+  controls.enabled = true;
+  el.classList.remove('dragging');
+
+  rotateSlice(axisName, sliceVal, direction, true);
+}
+
+function snapAxis(v){
+  const abs = { x:Math.abs(v.x), y:Math.abs(v.y), z:Math.abs(v.z) };
+  const max = Math.max(abs.x, abs.y, abs.z);
+  if (max < 0.3) return null;
+  if (abs.x === max) return { axis:'x', vec:new THREE.Vector3(Math.sign(v.x)||1, 0, 0) };
+  if (abs.y === max) return { axis:'y', vec:new THREE.Vector3(0, Math.sign(v.y)||1, 0) };
+  return { axis:'z', vec:new THREE.Vector3(0, 0, Math.sign(v.z)||1) };
+}
+
+// ——————————————————————————————————————
+//  Slice rotation — animated
+// ——————————————————————————————————————
+const pivot = new THREE.Group();
+cubeGroup.add(pivot);
+
+function collectSlice(axis, sliceVal){
+  const group = [];
+  cubies.forEach(c=>{
+    // c.position is relative to cubeGroup (pivot would offset)
+    const p = c.position;
+    const v = (axis==='x'?p.x:axis==='y'?p.y:p.z) / CUBIE_GAP;
+    if (Math.abs(v - sliceVal) < 0.2) group.push(c);
+  });
+  return group;
+}
+
+function axisVector(axis){
+  if (axis==='x') return new THREE.Vector3(1,0,0);
+  if (axis==='y') return new THREE.Vector3(0,1,0);
+  return new THREE.Vector3(0,0,1);
+}
+
+function rotateSlice(axis, sliceVal, dir, logMove=true){
+  if (isTwisting) return;
+  isTwisting = true;
+  const group = collectSlice(axis, sliceVal);
+  // reset pivot & attach cubies
+  pivot.position.set(0,0,0);
+  pivot.rotation.set(0,0,0);
+  pivot.updateMatrixWorld();
+  group.forEach(c => pivot.attach(c));
+
+  const axisVec = axisVector(axis);
+  const target = (Math.PI/2) * dir;
+  const dur = 240; // ms
+  const start = performance.now();
+  const easeOut = t => 1 - Math.pow(1 - t, 3);
+
+  function step(now){
+    const t = Math.min(1, (now - start) / dur);
+    const a = easeOut(t) * target;
+    pivot.setRotationFromAxisAngle(axisVec, a);
+    if (t < 1){ requestAnimationFrame(step); }
+    else {
+      // bake: reparent, snap positions & rotations
+      [...group].forEach(c => cubeGroup.attach(c));
+      // snap each cubie position to nearest grid
+      group.forEach(c=>{
+        c.position.set(
+          Math.round(c.position.x/CUBIE_GAP)*CUBIE_GAP,
+          Math.round(c.position.y/CUBIE_GAP)*CUBIE_GAP,
+          Math.round(c.position.z/CUBIE_GAP)*CUBIE_GAP,
+        );
+        // round rotation quaternion to nearest 90° orientation
+        snapQuaternion(c);
+      });
+      pivot.rotation.set(0,0,0);
+      isTwisting = false;
+      clearHighlight();
+      onTwistComplete();
+      if (logMove) recordMove(axis, sliceVal, dir);
+    }
+  }
+  requestAnimationFrame(step);
+}
+
+const snapTargets = (()=>{
+  const list = [];
+  const e = new THREE.Euler();
+  const angles = [0, Math.PI/2, Math.PI, -Math.PI/2];
+  for (const x of angles) for (const y of angles) for (const z of angles){
+    e.set(x,y,z);
+    const q = new THREE.Quaternion().setFromEuler(e);
+    list.push(q);
+  }
+  return list;
+})();
+
+function snapQuaternion(obj){
+  let best = snapTargets[0], bestDot = -Infinity;
+  const q = obj.quaternion;
+  for (const t of snapTargets){
+    const d = Math.abs(q.x*t.x + q.y*t.y + q.z*t.z + q.w*t.w);
+    if (d > bestDot){ bestDot = d; best = t; }
+  }
+  obj.quaternion.copy(best);
+}
+
+// ——————————————————————————————————————
+//  Move recording + display
+// ——————————————————————————————————————
+const moveLog = document.getElementById('moveLog');
+const moveHistory = []; // { axis, sliceVal, dir, label }
+let movesSinceReset = 0;
+
+function moveLabel(axis, sliceVal, dir){
+  // Use world-frame face letters based on axis/slice sign
+  // Prime (') if dir === -1 for standard face rotations
+  const map = {
+    'x,1':'R', 'x,-1':'L',
+    'y,1':'U', 'y,-1':'D',
+    'z,1':'F', 'z,-1':'B',
+  };
+  const key = `${axis},${sliceVal}`;
+  let name = map[key];
+  if (!name){
+    // middle slice
+    name = ({x:'M', y:'E', z:'S'})[axis];
+  }
+  // normalize direction: face rotations are CW when looking along outward normal.
+  // For L, D, B the outward normal points in −axis, so "clockwise" there is dir +1 in world → means the move label is base; reverse for prime.
+  const needFlip = (sliceVal === -1 && name !== 'M' && name !== 'E' && name !== 'S');
+  const effDir = needFlip ? -dir : dir;
+  return effDir === 1 ? name : name + "'";
+}
+
+function recordMove(axis, sliceVal, dir){
+  const label = moveLabel(axis, sliceVal, dir);
+  moveHistory.push({ axis, sliceVal, dir, label });
+  movesSinceReset++;
+  updateMoveLog();
+  updateMovesCount();
+  if (!timer.running && !timer.stopped && movesSinceReset === 1) timer.start();
+}
+function undoLast(){
+  const last = moveHistory.pop();
+  if (!last) return;
+  movesSinceReset++;
+  rotateSlice(last.axis, last.sliceVal, -last.dir, false);
+  updateMoveLog();
+  updateMovesCount();
+}
+function updateMoveLog(){
+  const last = moveHistory.slice(-24);
+  moveLog.innerHTML = last.map(m=>{
+    const prime = m.label.endsWith("'") ? ' prime' : '';
+    return `<span class="m${prime}">${m.label}</span>`;
+  }).join('');
+  moveLog.scrollTop = moveLog.scrollHeight;
+}
+function updateMovesCount(){
+  document.getElementById('timerMoves').textContent = `${movesSinceReset} moves`;
+}
+
+// ——————————————————————————————————————
+//  Orientation tracker — which color faces each world direction
+// ——————————————————————————————————————
+const trackerChips = {
+  U: document.getElementById('chipU'), D: document.getElementById('chipD'),
+  F: document.getElementById('chipF'), B: document.getElementById('chipB'),
+  L: document.getElementById('chipL'), R: document.getElementById('chipR'),
+};
+const trackerNames = {
+  U: document.getElementById('nameU'), D: document.getElementById('nameD'),
+  F: document.getElementById('nameF'), B: document.getElementById('nameB'),
+  L: document.getElementById('nameL'), R: document.getElementById('nameR'),
+};
+
+function hexOf(face){ return '#' + COLORS[face].getHexString(); }
+
+// Find the center cubie for each world direction and read its sticker color
+function getFaceCenterColor(worldDir){
+  // find cubie whose local position, transformed by cubeGroup's rotation, is closest to worldDir (magnitude CUBIE_GAP)
+  // stickers live on cubies; we find the sticker whose world-normal best matches worldDir
+  let best=null, bestDot=-Infinity;
+  cubies.forEach(c=>{
+    c.userData.stickers.forEach(s=>{
+      const n = new THREE.Vector3(0,0,1).applyQuaternion(s.getWorldQuaternion(new THREE.Quaternion()));
+      const d = n.dot(worldDir);
+      if (d > bestDot){ bestDot = d; best = s; }
+    });
+  });
+  // walk up to find the center (sticker on a cubie with only one sticker → center)
+  // But there's always a face whose center sticker normal is most aligned; best works for any sticker on that face
+  // To get the *center* color, pick the sticker on the cubie that sits at worldDir * CUBIE_GAP
+  const target = worldDir.clone().multiplyScalar(CUBIE_GAP);
+  let centerCubie = null, cbest = -Infinity;
+  cubies.forEach(c=>{
+    const p = new THREE.Vector3(); c.getWorldPosition(p);
+    const d = p.dot(worldDir);
+    if (d > cbest){ cbest = d; centerCubie = c; }
+  });
+  // if that cubie has exactly 1 sticker, it's the center
+  if (centerCubie && centerCubie.userData.stickers.length === 1){
+    return centerCubie.userData.stickers[0].userData.face;
+  }
+  // fallback — pick the sticker whose normal best matches
+  return best ? best.userData.face : 'U';
+}
+
+const WORLD_DIRS = {
+  U: new THREE.Vector3(0, 1, 0),
+  D: new THREE.Vector3(0,-1, 0),
+  F: new THREE.Vector3(0, 0, 1),
+  B: new THREE.Vector3(0, 0,-1),
+  R: new THREE.Vector3(1, 0, 0),
+  L: new THREE.Vector3(-1,0, 0),
+};
+
+function updateTracker(){
+  for (const [side, dir] of Object.entries(WORLD_DIRS)){
+    const face = getFaceCenterColor(dir);
+    trackerChips[side].style.background = hexOf(face);
+    trackerNames[side].textContent = COLOR_NAMES[face];
+  }
+}
+
+// ——————————————————————————————————————
+//  Solved detection
+// ——————————————————————————————————————
+function isSolved(){
+  // For each of 6 world directions, all stickers on that face must be same color.
+  for (const [side, dir] of Object.entries(WORLD_DIRS)){
+    const face = side; // target
+    let refColor = null;
+    let ok = true;
+    // gather stickers that currently face this direction
+    cubies.forEach(c=>{
+      c.userData.stickers.forEach(s=>{
+        const n = new THREE.Vector3(0,0,1).applyQuaternion(s.getWorldQuaternion(new THREE.Quaternion()));
+        if (n.dot(dir) > 0.9){
+          if (!refColor) refColor = s.userData.face;
+          else if (refColor !== s.userData.face) ok = false;
+        }
+      });
+    });
+    if (!ok) return false;
+  }
+  return true;
+}
+
+const statusBadge = document.getElementById('statusBadge');
+const statusText = document.getElementById('statusText');
+function updateStatus(){
+  const solved = isSolved();
+  if (solved){
+    statusBadge.classList.add('solved');
+    statusText.textContent = 'Solved';
+    if (timer.running && movesSinceReset > 5) timer.stop();
+  } else {
+    statusBadge.classList.remove('solved');
+    statusText.textContent = 'Scrambled';
+  }
+}
+
+function onTwistComplete(){
+  updateTracker();
+  updateStatus();
+}
+
+// ——————————————————————————————————————
+//  Scramble / reset
+// ——————————————————————————————————————
+function scramble(n = 22){
+  if (isTwisting) return;
+  timer.reset();
+  movesSinceReset = 0;
+  moveHistory.length = 0;
+  updateMoveLog();
+  updateMovesCount();
+  const moves = [];
+  const faces = [
+    {axis:'x', slice:1}, {axis:'x', slice:-1},
+    {axis:'y', slice:1}, {axis:'y', slice:-1},
+    {axis:'z', slice:1}, {axis:'z', slice:-1},
+  ];
+  let last = -1;
+  for (let i=0;i<n;i++){
+    let idx;
+    do { idx = Math.floor(Math.random()*faces.length); } while (idx === last || (idx^1) === last);
+    last = idx;
+    const dir = Math.random()<0.5 ? 1 : -1;
+    moves.push({...faces[idx], dir});
+  }
+  let i = 0;
+  function next(){
+    if (i >= moves.length){
+      updateTracker(); updateStatus();
+      // arm timer start on next human move
+      timer.armed = true;
+      return;
+    }
+    const m = moves[i++];
+    rotateSliceFast(m.axis, m.slice, m.dir, ()=>next());
+  }
+  next();
+}
+
+function rotateSliceFast(axis, sliceVal, dir, done){
+  if (isTwisting){ setTimeout(()=>rotateSliceFast(axis,sliceVal,dir,done), 30); return; }
+  isTwisting = true;
+  const group = collectSlice(axis, sliceVal);
+  pivot.position.set(0,0,0); pivot.rotation.set(0,0,0);
+  pivot.updateMatrixWorld();
+  group.forEach(c => pivot.attach(c));
+  const axisVec = axisVector(axis);
+  const target = (Math.PI/2)*dir;
+  const dur = 95;
+  const start = performance.now();
+  const easeOut = t => 1 - Math.pow(1-t, 2);
+  function step(now){
+    const t = Math.min(1, (now-start)/dur);
+    pivot.setRotationFromAxisAngle(axisVec, easeOut(t)*target);
+    if (t<1) requestAnimationFrame(step);
+    else {
+      [...group].forEach(c => cubeGroup.attach(c));
+      group.forEach(c=>{
+        c.position.set(
+          Math.round(c.position.x/CUBIE_GAP)*CUBIE_GAP,
+          Math.round(c.position.y/CUBIE_GAP)*CUBIE_GAP,
+          Math.round(c.position.z/CUBIE_GAP)*CUBIE_GAP,
+        );
+        snapQuaternion(c);
+      });
+      pivot.rotation.set(0,0,0);
+      isTwisting = false;
+      updateTracker();
+      done && done();
+    }
+  }
+  requestAnimationFrame(step);
+}
+
+function resetCube(){
+  if (isTwisting) return;
+  // blow away and rebuild cube orientation by resetting each cubie
+  // simplest: rotate scene-free by resetting each cubie's rotation & position to its grid home
+  // But the identity of "which cubie is where" has changed. Easier: rebuild stickers.
+  // We'll rebuild: destroy group & re-create.
+  cubies.forEach(c => cubeGroup.remove(c));
+  cubies.length = 0;
+  buildCube();
+  timer.reset();
+  moveHistory.length = 0;
+  movesSinceReset = 0;
+  updateMoveLog(); updateMovesCount();
+  updateTracker(); updateStatus();
+}
+
+function buildCube(){
+  for (let x=-1; x<=1; x++){
+    for (let y=-1; y<=1; y++){
+      for (let z=-1; z<=1; z++){
+        const cubieGroup = new THREE.Group();
+        cubieGroup.position.set(x*CUBIE_GAP, y*CUBIE_GAP, z*CUBIE_GAP);
+        const geo = new RoundedBoxGeometry(CUBIE_SIZE, CUBIE_SIZE, CUBIE_SIZE, 4, 0.08);
+        const body = new THREE.Mesh(geo, plasticMat);
+        body.castShadow = true; body.receiveShadow = true;
+        cubieGroup.add(body);
+        const stickerGeo = new THREE.PlaneGeometry(STICKER_SIZE, STICKER_SIZE);
+        const stickerList = [];
+        function addSticker(face, rot, pos){
+          const m = new THREE.Mesh(stickerGeo, stickerMats[face]);
+          m.position.copy(pos); m.rotation.copy(rot);
+          m.userData.face = face;
+          cubieGroup.add(m); stickerList.push(m);
+        }
+        const half = CUBIE_SIZE/2 + STICKER_INSET;
+        if (x===1)  addSticker('R', new THREE.Euler(0, Math.PI/2, 0),  new THREE.Vector3(half, 0, 0));
+        if (x===-1) addSticker('L', new THREE.Euler(0,-Math.PI/2, 0),  new THREE.Vector3(-half, 0, 0));
+        if (y===1)  addSticker('U', new THREE.Euler(-Math.PI/2, 0, 0), new THREE.Vector3(0, half, 0));
+        if (y===-1) addSticker('D', new THREE.Euler(Math.PI/2, 0, 0),  new THREE.Vector3(0,-half, 0));
+        if (z===1)  addSticker('F', new THREE.Euler(0, 0, 0),          new THREE.Vector3(0, 0, half));
+        if (z===-1) addSticker('B', new THREE.Euler(0, Math.PI, 0),    new THREE.Vector3(0, 0,-half));
+        cubieGroup.userData = { stickers: stickerList };
+        cubeGroup.add(cubieGroup);
+        cubies.push(cubieGroup);
+      }
+    }
+  }
+}
+
+// ——————————————————————————————————————
+//  Timer
+// ——————————————————————————————————————
+const timer = {
+  running:false, stopped:false, armed:false, startTs:0, elapsed:0, best: Number(localStorage.getItem('mrfascinate-best')) || 0,
+  start(){
+    this.running=true; this.stopped=false; this.armed=false;
+    this.startTs = performance.now();
+  },
+  stop(){
+    this.running=false; this.stopped=true;
+    this.elapsed = (performance.now() - this.startTs)/1000;
+    if (!this.best || this.elapsed < this.best){
+      this.best = this.elapsed;
+      localStorage.setItem('mrfascinate-best', String(this.best));
+    }
+    this.updateBest();
+  },
+  reset(){
+    this.running=false; this.stopped=false; this.armed=false;
+    this.elapsed=0; this.tick();
+  },
+  tick(){
+    const v = this.running ? (performance.now() - this.startTs)/1000 : this.elapsed;
+    const el = document.getElementById('timerVal');
+    el.textContent = v.toFixed(2);
+    el.classList.toggle('running', this.running);
+  },
+  updateBest(){
+    const el = document.getElementById('timerBest');
+    el.textContent = this.best ? `best ${this.best.toFixed(2)}s` : 'best —';
+  }
+};
+timer.updateBest();
+
+// ——————————————————————————————————————
+//  Buttons
+// ——————————————————————————————————————
+document.getElementById('scrambleBtn').addEventListener('click', ()=> scramble(22));
+document.getElementById('resetBtn').addEventListener('click', ()=> resetCube());
+document.getElementById('undoBtn').addEventListener('click', ()=> undoLast());
+document.getElementById('viewBtn').addEventListener('click', ()=>{
+  // animate camera back to default
+  const from = camera.position.clone();
+  const to = new THREE.Vector3(6.2, 5.6, 8.4);
+  const start = performance.now(), dur = 500;
+  function step(t){
+    const k = Math.min(1, (t - start)/dur);
+    const e = 1 - Math.pow(1-k, 3);
+    camera.position.lerpVectors(from, to, e);
+    controls.target.set(0,0,0);
+    camera.lookAt(0,0,0);
+    if (k<1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+});
+
+// intro
+document.getElementById('introGo').addEventListener('click', ()=>{
+  document.getElementById('intro').classList.add('gone');
+  setTimeout(()=>document.getElementById('intro').remove(), 700);
+});
+
+// keyboard shortcuts
+window.addEventListener('keydown', (e)=>{
+  if (e.key === ' '){ e.preventDefault(); scramble(22); }
+  if (e.key === 'r' || e.key === 'R'){ resetCube(); }
+  if (e.key === 'z' || e.key === 'Z'){ undoLast(); }
+});
+
+// ——————————————————————————————————————
+//  Idle rotation (gentle) when user isn't interacting
+// ——————————————————————————————————————
+// ——————————————————————————————————————
+//  Auto-rotate toggle
+// ——————————————————————————————————————
+let autoRotate = false;
+const spinBtn = document.getElementById('spinBtn');
+spinBtn.addEventListener('click', ()=>{
+  autoRotate = !autoRotate;
+  spinBtn.textContent = `⟳ Spin: ${autoRotate ? 'On' : 'Off'}`;
+  spinBtn.classList.toggle('active', autoRotate);
+});
+
+// ——————————————————————————————————————
+//  Resize
+// ——————————————————————————————————————
+window.addEventListener('resize', ()=>{
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  composer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ——————————————————————————————————————
+//  Animate
+// ——————————————————————————————————————
+updateTracker(); updateStatus();
+bakeEnv();
+
+function animate(){
+  requestAnimationFrame(animate);
+  // drift stars slightly for parallax feel
+  scene.children.forEach(ch=>{
+    if (ch.isPoints) ch.rotation.y += 0.00015;
+  });
+  // auto-rotate cube if enabled (and not mid-twist)
+  if (autoRotate && !isTwisting){
+    cubeGroup.rotation.y += 0.0045;
+  }
+  controls.update();
+  timer.tick();
+  composer.render();
+}
+animate();
+</script>
+
+</body>
+</html>
