@@ -109,12 +109,28 @@
   #intro .btn{padding:13px 28px}
 
   @media (max-width: 780px){
-    #topLeft,#topRight{width:calc(50% - 24px)}
-    #tracker{grid-template-columns:44px 1fr}
-    #bottom{gap:6px}
-    .btn{padding:9px 12px;font-size:11.5px}
-    #timerCard{bottom:72px}
-    #bottomRight{bottom:72px}
+    /* Tracker hidden — too dense for small screens */
+    #topRight{display:none}
+
+    /* Brand card spans full width, compact */
+    #topLeft{width:calc(100% - 32px);left:16px;top:12px}
+    #topLeft .card{padding:10px 12px}
+    h1.brand{font-size:13px}
+    #moveLog{max-height:44px;font-size:11.5px}
+
+    /* Compact timer above buttons */
+    #timerCard{left:16px;bottom:78px}
+    #timerCard .card{padding:8px 12px}
+    #timerCard .val{font-size:20px}
+    #timerCard .sub{font-size:10px;margin-top:4px;gap:6px}
+
+    /* Status badge above buttons on right */
+    #bottomRight{right:16px;bottom:78px}
+
+    /* Buttons wrap into 2 clean rows */
+    #bottom{bottom:16px;left:16px;right:16px;transform:none;flex-wrap:wrap;justify-content:center;gap:6px}
+    .btn{padding:10px 14px;font-size:11.5px}
+    .kbd{display:none}
   }
 </style>
 </head>
